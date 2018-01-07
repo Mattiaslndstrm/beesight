@@ -111,7 +111,7 @@ def csv_to_todays_minutes(csv_lines):
     config = configparser.RawConfigParser()
     logger.debug ("Reading config file %s", CONFIG_FILE_NAME)
     config.read(CONFIG_FILE_NAME)
-    timezone_offset = int(config.get(INSIGHT_SECTION, "utc_timezone"))
+    timezone_offset = config.get(INSIGHT_SECTION, "utc_timezone")
 
     logger.info("Parsing last four sessions from CSV:")
     # try to read the last four entries
@@ -124,11 +124,13 @@ def csv_to_todays_minutes(csv_lines):
             date_part, time_part = datetime_part.split(" ")
             date_parts = date_part.split("/")
             time_parts = time_part.split(":")
+            print(date_parts)
+            print(time_parts)
             if len(date_parts) == 3 and len(time_parts) == 3:
                 m, d, y = map(int, date_parts)
                 h, _, _ = map(int, time_parts)
                 dt = datetime.date(y, m, d)
-                if h + timezone_offset < 0:
+                if float(h) + float(timezone_offset) < 0:
                     dt -= datetime.timedelta(days=1)
                 logger.info(dt)
                 if dt == datetime.date.today():
