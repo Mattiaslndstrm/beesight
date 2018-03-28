@@ -94,7 +94,7 @@ def get_beeminder():
     response = requests.get(GET_DATAPOINTS_URL % (username, goal_name,
                                                   auth_token))
     # the_page = response.read()
-    return response.json()[0]
+    return response.json()[0]['comment']
 
 
 def beeminder_to_one_per_day(beeminder_output):
@@ -117,7 +117,11 @@ def beeminder_to_one_per_day(beeminder_output):
     return s.keys()
 
 
-def csv_to_todays_minutes(csv_lines):
+def csv_to_entries_since_last_entry(csv_lines, last_comment):
+    pass
+
+
+def csv_to_todays_minutes(csv_lines, last_comment):
     minutes = int(0)
 
     # skip first two header lines
@@ -125,14 +129,19 @@ def csv_to_todays_minutes(csv_lines):
     logger.debug("Reading config file %s", CONFIG_FILE_NAME)
     config.read(CONFIG_FILE_NAME)
     timezone_offset = config.get(INSIGHT_SECTION, "utc_timezone")
+    entries = []
 
     logger.info("Parsing last four sessions from CSV:")
     # try to read the last four entries
     try:
-        for l in csv_lines[2:6]:
+        for l in csv_lines[2:]:
+            session = {}
+            session['timestamp'] = datetime.datetime.today().timestamp()
             line = l.split(",")
             datetime_part = line[0]
             minutes_entry = line[1]
+            session['comment'] = datetime_part
+            session['value'] = minutes_entry
             logger.info("%s : %s minutes", datetime_part, minutes_entry)
             date_part, time_part = datetime_part.split(" ")
             date_parts = date_part.split("/")
@@ -154,7 +163,7 @@ def csv_to_todays_minutes(csv_lines):
             minutes)
     else:
         logger.info("File parsed successfully, %s minutes retrieved.", minutes)
-    return (minutes, datetime_part)
+    return entries
 
 
 if __name__ == "__main__":
