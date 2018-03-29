@@ -93,9 +93,10 @@ def get_beeminder_info():
 
     response = requests.get(GET_DATAPOINTS_URL % (username, goal_name,
                                                   auth_token))
-    order = sorted(response.json(), key=lambda d: d['timestamp'], reverse=True)
-    return {'timestamp': order[0]['timestamp'],
-            'comment': order[0]['comment']}
+    sorted_datapoints = sorted(response.json(), key=lambda d: d['timestamp'],
+                               reverse=True)
+    return {'timestamp': sorted_datapoints[0]['timestamp'],
+            'comment': sorted_datapoints[0]['comment']}
 
 
 def beeminder_to_one_per_day(beeminder_output):
@@ -223,8 +224,8 @@ if __name__ == "__main__":
     #print "%s datapoints in beeminder" % len(beeminder_dates)
 
     # get today's date
-    new_date = datetime.date.today()
-    logger.debug("new_date: %s", new_date)
+    # new_date = datetime.date.today()
+    # logger.debug("new_date: %s", new_date)
 
     # create beeminder-friendly datapoints
     timestamp = datetime.datetime.today().timestamp()
