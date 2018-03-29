@@ -144,7 +144,7 @@ def get_mediation_time(datetime_part, timezone_offset):
     # Changes the time to of the meditation time in UTC to users's time zone.
     dt = (datetime.datetime(y, m, d, h, mi, s)
           + datetime.timedelta(hours=float(timezone_offset)))
-    return dt
+    return dt.timestamp()
 
 
 def csv_to_entries(csv_lines, bee_info):
@@ -153,12 +153,9 @@ def csv_to_entries(csv_lines, bee_info):
     logger.info("Parsing today's sessions from CSV:")
     try:
         entries = [{
-            'comment':
-            f'Added with beesight {today}',
-            'value':
-            l.split(',')[1],
-            'timestamp':
-            get_mediation_time(l.split(',')[0], timezone_offset).timestamp()
+            'comment': f'Added with beesight {today}',
+            'value': l.split(',')[1],
+            'timestamp': get_mediation_time(l.split(',')[0], timezone_offset)
         } for l in csv_lines[2:-1]]
     except IndexError:
         logger.info('Insight data too short')
