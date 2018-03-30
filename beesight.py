@@ -98,26 +98,6 @@ def get_beeminder_info():
             'comment': sorted_datapoints[0]['comment']}
 
 
-def beeminder_to_one_per_day(beeminder_output):
-    bm = json.loads(beeminder_output)
-
-    s = {}
-
-    # skip first two header lines
-    for entry in bm:
-        ts = entry['timestamp']
-        dt = datetime.fromtimestamp(ts)
-
-        # need to move back one dayfrom the beeminder time, because it
-        # pushes the day forward to 01:00 on day + 1, at least in JST
-        d = dt.date() - timedelta(days=1)
-
-        if not d in s:
-            s[d] = 1
-
-    return s.keys()
-
-
 def get_time_zone():
     config = configparser.RawConfigParser()
     logger.debug("Reading config file %s", CONFIG_FILE_NAME)
