@@ -1,25 +1,23 @@
 import configparser
-import datetime
+from datetime import datetime, timedelta, date
 import urllib
 import requests
-import sys
 import json
-import time
 
-#add logging module
+# add logging module
 import logging
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-#create a log file handler
+# create a log file handler
 handler = logging.FileHandler('beesight.log')
 handler.setLevel(logging.DEBUG)
-#logging format
+# logging format
 formatter = logging.Formatter(
     '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 handler.setFormatter(formatter)
-#add handler to the logger
+# add handler to the logger
 logger.addHandler(handler)
 
 # complain on config file issues
@@ -32,6 +30,7 @@ BEEMINDER_SECTION = 'beeminder'
 
 LOGIN_URL = "https://insighttimer.com/user_session"
 INSIGHT_CSV_URL = "https://insighttimer.com/sessions/export"
+INSIGHT_JSON_URL = 'https://insighttimer.com/sessions/all?p1=1&l1=999999'
 
 BASE_URL = "https://www.beeminder.com/api/v1/"
 GET_DATAPOINTS_URL = BASE_URL + "users/%s/goals/%s/datapoints.json?auth_token=%s"
@@ -58,8 +57,8 @@ def get_insight_data():
     logger.debug("Submitting POST request to insighttimer.com...")
     r = session.post(LOGIN_URL, data=login_data)
     logger.debug("Submitting GET request to insighttimer.com...")
-    r = session.get(INSIGHT_CSV_URL)
-    return r.text.split('\n')
+    r = session.get(INSIGHT_JSON_URL)
+    return r.json()['sessions']
 
 
 def post_beeminder_entry(entry):
@@ -75,7 +74,7 @@ def post_beeminder_entry(entry):
                                       entry["timestamp"], entry["value"],
                                       entry["comment"])
     logger.debug(
-        "Ready to post new datapoints string to beeminder.com. Encoded URL follows:"
+        "Ready to post new datapoints to beeminder.com. Encoded URL follows:"
     )
     logger.debug(full_url)
     r = session.post(full_url)
@@ -107,11 +106,11 @@ def beeminder_to_one_per_day(beeminder_output):
     # skip first two header lines
     for entry in bm:
         ts = entry['timestamp']
-        dt = datetime.datetime.fromtimestamp(ts)
+        dt = datetime.fromtimestamp(ts)
 
         # need to move back one dayfrom the beeminder time, because it
         # pushes the day forward to 01:00 on day + 1, at least in JST
-        d = dt.date() - datetime.timedelta(days=1)
+        d = dt.date() - timedelta(days=1)
 
         if not d in s:
             s[d] = 1
@@ -126,92 +125,60 @@ def get_time_zone():
     return config.get(INSIGHT_SECTION, "utc_timezone")
 
 
-# def csv_to_entries_since_last_entry(csv_lines, last_comment):
-#     timezone_offset = get_time_zone()
-#     entries = []
-
-#     logger.info("Parsing all sessions since last session from CSV:")
-#     try:
-#         session = {}
-
-def get_mediation_time(datetime_part, timezone_offset):
-    date_part, time_part = datetime_part.split(" ")
-    date_parts = date_part.split("/")
-    time_parts = time_part.split(":")
-    # print(date_parts)
-    # print(time_parts)
-    m, d, y = map(int, date_parts)
-    h, mi, s = map(int, time_parts)
-    # Changes the time to of the meditation time in UTC to users's time zone.
-    dt = (datetime.datetime(y, m, d, h, mi, s)
-          + datetime.timedelta(hours=float(timezone_offset)))
-    return dt.timestamp()
+def mediation_time(datetime_part, timezone_offset):
+    return (datetime.strptime(datetime_part, '%b %d %Y %I:%M %p')
+            + timedelta(hours=float(timezone_offset)))
 
 
-def csv_to_entries(csv_lines, bee_info):
+def minutes_to_float(minutes):
+    if minutes is not '-':
+        m, s = minutes.split(':')
+        return round(float(m) + (float(s) / 60), 4)
+    return None
+
+
+def filter_new_goal(entries):
+    return [e for e in entries if
+            datetime.fromtimestamp(int(e['timestamp'])).date() == date.today()]
+    # return list(
+    #             filter(
+    #                 lambda x: datetime.fromtimestamp(int(x['timestamp'])).date()
+    #                 == date.today(), entries))
+
+
+def filter_update_goal(entries, bee_info):
+    return [e for e in entries if e['timestamp'] > bee_info['timestamp']]
+    # return list(
+    #             filter(lambda x: x['timestamp'] > bee_info['timestamp'],
+    #                    entries))
+
+
+def json_to_entries(insight_json, bee_info):
     timezone_offset = get_time_zone()
-    today = datetime.date.today()
     logger.info("Parsing today's sessions from CSV:")
+
     try:
         entries = [{
-            'comment': f'Added with beesight {today}',
-            'value': l.split(',')[1],
-            'timestamp': get_mediation_time(l.split(',')[0], timezone_offset)
-        } for l in csv_lines[2:-1]]
+            'comment': (f'Added with beesight {date.today()}. Meditation made '
+                        f'{mediation_time(l["time"], timezone_offset)}.'),
+            'value': minutes_to_float(l['duration']),
+            'timestamp': mediation_time(l['time'], timezone_offset).timestamp()
+            } for l in insight_json]
+
     except IndexError:
         logger.info('Insight data too short')
+
     else:
         if bee_info['comment'][:24] == 'initial datapoint of 0.0':
-            return list(
-                filter(
-                    lambda x: datetime.datetime.fromtimestamp(int(x['timestamp'])).date() == today,
-                    entries))
+            return filter_new_goal(entries)
         else:
-            return list(
-                filter(lambda x: x['timestamp'] > bee_info['timestamp'],
-                       entries))
-    # skip first two header lines
-    # try to read the last four entries
-    # try:
-    #     for l in csv_lines[2:]:
-    #         session = {}
-    #         line = l.split(",")
-    #         datetime_part = line[0]
-    #         minutes_entry = line[1]
-    #         if datetime_part == last_comment:
-    #             break
-    #         # needs to be the day of meditaiton
-    #         # session['timestamp'] = datetime.datetime.today().timestamp()
-    #         logger.info("%s : %s minutes", datetime_part, minutes_entry)
-    #         dt = get_mediation_time(datetime_part, timezone_offset)
-    #         session['comment'] = datetime_part
-    #         session['value'] = minutes_entry
-    #         session['timestamp'] = dt.timestamp()
-    #         if last_comment[:24] == 'initial datapoint of 0.0':
-    #             if dt.date() == datetime.date.today():
-    #                 if entries:
-    #                     print('GRISGRISGRISGRISGRIS')
-    #                     if session['comment'] == entries[-1]['comment']:
-    #                         return entries
-    #                 entries.insert(0, session)
-    #             else:
-    #                 return entries
-    #         entries.insert(0, session)
-    # except IndexError:
-    #     logger.info(('Insight session data too short: expected at least 4 '
-    #                  'entries, retrieved %s minutes from available data'),
-    #                 minutes)
-    # else:
-    #     logger.info("File parsed successfully, %s minutes retrieved.", minutes)
-    # return entries
+            return filter_update_goal(entries, bee_info)
 
 
 if __name__ == "__main__":
     # get today's minutes from insight
-    insight_entries = csv_to_entries(get_insight_data(),
-                                     get_beeminder_info())
-    # print(insight_entries)
-
+    insight_entries = json_to_entries(get_insight_data(),
+                                      get_beeminder_info())
     # if insight_minutes == 0:
     #     logger.info("No minutes logged for today's date on InsightTimer.com")
     #     sys.exit()
@@ -219,21 +186,10 @@ if __name__ == "__main__":
     #     logger.info("%s minutes meditated today according to InsightTimer.com",
     #                 insight_minutes)
 
-    # get dates of days meditated, from beeminder
-    #beeminder_dates = beeminder_to_one_per_day(get_beeminder_info())
-    #print "%s datapoints in beeminder" % len(beeminder_dates)
-
     # get today's date
     # new_date = datetime.date.today()
     # logger.debug("new_date: %s", new_date)
 
-    # create beeminder-friendly datapoints
-    timestamp = datetime.datetime.today().timestamp()
-    # new_datapoint = {
-    #     'timestamp': timestamp,
-    #     'value': insight_minutes,
-    #     'comment': date_comment
-    # }
     # logger.debug("new_datapoint: %s", insight_entries)
 
     for datapoint in insight_entries:
